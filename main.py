@@ -75,13 +75,13 @@ class TimeService:
             return f"{seconds:02d}с"
 
 class OrderBlockDetector:
-    def __init__(self, trading_pair, timeframe):
+    def __init__(self, trading_pair, timeframe, bot_token, chat_id):
         self.trading_pair = trading_pair
         self.timeframe = timeframe
         self.client = Client()
         self.time_service = TimeService()
-        self.BOT_TOKEN = "8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM"
-        self.CHAT_ID = "1112634401"
+        self.BOT_TOKEN = bot_token
+        self.CHAT_ID = chat_id
 
     def send_telegram_message(self, message_text):
         url = f"https://api.telegram.org/bot{self.BOT_TOKEN}/sendMessage"
@@ -179,20 +179,38 @@ class OrderBlockDetector:
         except Exception as e:
             print(f"Критическая ошибка в сервисе {self.trading_pair} {self.timeframe}: {e}")
 
+def get_telegram_credentials():
+    """Функция для получения токена бота и chat ID через консоль"""
+    print("🤖 Введите данные Telegram бота:")
+    bot_token = input("Токен бота: ").strip()
+    chat_id = input("Chat ID: ").strip()
+
+    # Проверка на пустые значения
+    if not bot_token or not chat_id:
+        print("❌ Ошибка: токен бота и chat ID не могут быть пустыми!")
+        return get_telegram_credentials()  # Рекурсивный вызов при ошибке
+
+    return bot_token, chat_id
+
 async def main():
     print("🚀 Запуск детектора ордерблоков...")
 
+    # Получаем данные Telegram бота один раз
+    BOT_TOKEN, CHAT_ID = get_telegram_credentials()
+    print("✅ Данные Telegram бота получены успешно!")
+
+    # Создаем детекторы с переданными данными
     detectors = [
-        OrderBlockDetector("BTCUSDT", "5m"),
-        OrderBlockDetector("BTCUSDT", "15m"),
-        OrderBlockDetector("BTCUSDT", "1h"),
-        OrderBlockDetector("BTCUSDT", "4h"),
-        OrderBlockDetector("BTCUSDT", "1d"),
-        OrderBlockDetector("ETHUSDT", "5m"),
-        OrderBlockDetector("ETHUSDT", "15m"),
-        OrderBlockDetector("ETHUSDT", "1h"),
-        OrderBlockDetector("ETHUSDT", "4h"),
-        OrderBlockDetector("ETHUSDT", "1d")
+        OrderBlockDetector("BTCUSDT", "5m", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("BTCUSDT", "15m", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("BTCUSDT", "1h", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("BTCUSDT", "4h", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("BTCUSDT", "1d", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("ETHUSDT", "5m", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("ETHUSDT", "15m", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("ETHUSDT", "1h", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("ETHUSDT", "4h", BOT_TOKEN, CHAT_ID),
+        OrderBlockDetector("ETHUSDT", "1d", BOT_TOKEN, CHAT_ID)
     ]
 
     await asyncio.gather(
