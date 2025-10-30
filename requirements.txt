@@ -1,0 +1,7 @@
+asyncio
+logging
+pytz
+datetime
+aiohttp
+requests
+python-binance
