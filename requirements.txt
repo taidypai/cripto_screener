@@ -5,5 +5,3 @@ datetime
 aiohttp
 requests
 python-binance
-8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM
-1112634401
