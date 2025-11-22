@@ -43,7 +43,7 @@ function main()
             message("No price data available", 2)
         end
 
-        sleep(1000)
+        sleep(2)
     end
 end
 
