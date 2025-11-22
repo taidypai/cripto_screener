@@ -2,10 +2,10 @@ import requests
 import asyncio
 from time_service import TimeService
 
-class OrderBlockDetector:
+class Detector:
 
     def __init__(self, timeframe, bot_token, chat_id):
-        self.trading_pairs = ['BTCUSDT', 'ETHUSDT', 'IMOEXF', 'GLDRUBF']
+        self.trading_pairs = ['IMOEXF', 'GLDRUBF']
         self.candles = {}  # Будет заполняться автоматически
         self.timeframe = timeframe
         self.time_service = TimeService()
@@ -14,7 +14,12 @@ class OrderBlockDetector:
 
         # Инициализируем словарь для каждой пары
         for pair in self.trading_pairs:
-            self.candles[pair] = []
+            self.candles[pair] = {
+                'open': None,
+                'high': None,
+                'low': None,
+                'close': None
+            }
 
     def send_telegram_message(self, message_text):
         url = f"https://api.telegram.org/bot{self.BOT_TOKEN}/sendMessage"
@@ -33,21 +38,13 @@ class OrderBlockDetector:
             return False
 
     def get_price(self):
-        """Получает цены ВСЕХ пар из разных источников"""
         current_prices = {}
 
         for pair in self.trading_pairs:
             try:
-                if pair in ['BTCUSDT', 'ETHUSDT']:
-                    # Binance цена
-                    from binance.client import Client
-                    client = Client()
-                    price = float(client.get_symbol_ticker(symbol=pair)['price'])
-                else:
-                    # QUIK цена
-                    from monitoring_quik import MQ
-                    prices = MQ.read_prices()
-                    price = prices.get(pair) if prices else None
+                from monitoring_quik import MQ
+                prices = MQ.read_prices()
+                price = prices.get(pair) if prices else None
 
                 if price is not None:
                     current_prices[pair] = price
@@ -59,125 +56,111 @@ class OrderBlockDetector:
 
         return current_prices
 
+    def update_candle(self, pair, current_price):
+        """Обновляет свечу новым значением цены"""
+        candle = self.candles[pair]
+
+        # Если это первое значение - инициализируем свечу
+        if candle['open'] is None:
+            candle['open'] = current_price
+            candle['high'] = current_price
+            candle['low'] = current_price
+            candle['close'] = current_price
+            return
+
+        # Обновляем максимум и минимум
+        if current_price > candle['high']:
+            candle['high'] = current_price
+        if current_price < candle['low']:
+            candle['low'] = current_price
+
+        # Обновляем закрытие
+        candle['close'] = current_price
+
+    def check_liquidity_removal(self, pair):
+        """Проверяет снятие ликвидности для пары"""
+        candle = self.candles[pair]
+
+        # Проверяем, что все значения инициализированы
+        if any(v is None for v in [candle['open'], candle['high'], candle['low'], candle['close']]):
+            return False
+
+        # Вычисляем тело свечи
+        body_size = abs(candle['close'] - candle['open'])
+
+        # Вычисляем верхний и нижний тени (фитили)
+        if candle['close'] > candle['open']:  # Бычья свеча
+            upper_wick = candle['high'] - candle['close']
+            lower_wick = candle['open'] - candle['low']
+        else:  # Медвежья свеча
+            upper_wick = candle['high'] - candle['open']
+            lower_wick = candle['close'] - candle['low']
+
+        # Проверяем условие снятия ликвидности: тело свечи < нижнего фитиля в 2 раза
+        if body_size > 0 and lower_wick > body_size * 2:
+            return True
+
+        return False
+
     def analyze_all_pairs(self):
-        """Анализирует ВЕСЬ словарь candles на наличие ордерблоков"""
-        order_blocks = []  # список найденных ордерблоков
+        """Анализирует ВСЕ пары на снятие ликвидности"""
+        liquidity_removals = []  # список найденных снятий ликвидности
 
-        for pair, candle_list in self.candles.items():
-            # Должны быть РОВНО 2 свечи для анализа
-            if len(candle_list) != 2:
-                continue  # пропускаем если не 2 свечи
+        for pair in self.trading_pairs:
+            if self.check_liquidity_removal(pair):
+                candle = self.candles[pair]
 
-            # Всегда берем первую и вторую свечу (они всегда последние)
-            first_candle = candle_list[0]  # более старая свеча
-            second_candle = candle_list[1]  # более новая свеча
-
-            prev_change = first_candle['change']
-            curr_change = second_candle['change']
-
-            has_trend_reversal = (prev_change * curr_change) < 0  # Смена направления
-            has_strong_move = abs(curr_change) > abs(prev_change) * 2  # Сильное движение
-
-            if has_trend_reversal and has_strong_move:
-                if curr_change > 0:
-                    block_type = 'GREEN'
+                # Определяем тип свечи
+                if candle['close'] > candle['open']:
+                    candle_type = 'БЫЧЬЯ'
                 else:
-                    block_type = 'RED'
+                    candle_type = 'МЕДВЕЖЬЯ'
 
-                order_blocks.append(f"{pair}: {block_type}")
-                print(f"✅ Найден ордерблок: {pair} {block_type}")
+                # Вычисляем параметры для сообщения
+                body_size = abs(candle['close'] - candle['open'])
+                lower_wick = candle['open'] - candle['low'] if candle['close'] > candle['open'] else candle['close'] - candle['low']
 
-        # Отправляем одним сообщением если нашли ордерблоки
-        if order_blocks:
+                message_info = f"{pair}: {candle_type} | Тело: {body_size:.2f} | Нижняя тень: {lower_wick:.2f}"
+                liquidity_removals.append(message_info)
+                print(f"✅ Найдено снятие ликвидности: {pair}")
+
+        # Отправляем одним сообщением если нашли снятия ликвидности
+        if liquidity_removals:
             message = f"Таймфрейм → {self.timeframe}\n"
-            message += "Найдены ордерблоки:\n"
-            message += "\n".join(order_blocks)
+            message += "Обнаружено снятие ликвидности:\n"
+            message += "\n".join(liquidity_removals)
 
             self.send_telegram_message(message)
             return True
         else:
-            print(f"❌ На {self.timeframe} ордерблоки не обнаружены")
+            print(f"❌ На {self.timeframe} снятие ликвидности не обнаружено")
             return False
 
-        # Отправляем сообщение если нашли ордерблоки
-        if order_blocks_found:
-            message = f"{self.timeframe}: Найдены ордерблоки:\n"
-            for pair, block_type in order_blocks_found.items():
-                message += f"{pair}: {block_type}\n"
-
-            self.send_telegram_message(message)
-            print(f"✅ Ордерблоки найдены: {order_blocks_found}")
-            return order_blocks_found
-        else:
-            print(f"❌ Ордерблоки не обнаружены на {self.timeframe}")
-            return {}
-
-
     async def start_detection(self):
-        """Основной цикл для ВСЕХ пар на одном таймфрейме"""
+        """Основной цикл для ВСЕХ пар"""
         print(f"🚀 Запуск сервиса для таймфрейма {self.timeframe}")
 
-        # Ждем первую свечу
-        wait_time = await self.time_service.get_time_to_candle_close(self.timeframe)
-        if wait_time > 1:
-            formatted_time = await self.time_service.format_time_remaining(wait_time)
-            print(f"⏰ Ожидание закрытия свечи {self.timeframe}: {formatted_time}")
-            await asyncio.sleep(wait_time)
-
-        # Стартовые цены (открытие свечи)
-        start_prices = self.get_price()
-        print(f"📊 Стартовые цены получены")
-
         while True:
-            # Ждем закрытие свечи
-            wait_time = await self.time_service.get_time_to_candle_close(self.timeframe)
-            if wait_time > 1:
-                formatted_time = await self.time_service.format_time_remaining(wait_time)
-                print(f"⏰ Ожидание закрытия свечи {self.timeframe}: {formatted_time}")
-                await asyncio.sleep(wait_time)
-
-            # Цены закрытия
+            # Получаем текущие цены каждую секунду
             current_prices = self.get_price()
-            print(f"🎯 Цены закрытия получены")
 
-            # Создаем/обновляем свечи для КАЖДОЙ пары
+            # Обновляем свечи для каждой пары
             for pair in self.trading_pairs:
-                if pair in start_prices and pair in current_prices:
-                    open_price = start_prices[pair]
-                    close_price = current_prices[pair]
+                if pair in current_prices:
+                    self.update_candle(pair, current_prices[pair])
+                    print(f"{pair}: O:{self.candles[pair]['open']:.2f} H:{self.candles[pair]['high']:.2f} L:{self.candles[pair]['low']:.2f} C:{self.candles[pair]['close']:.2f}")
 
-                    candle = {
-                        "open": open_price,
-                        "close": close_price,
-                        "change": close_price - open_price
-                    }
+            # Анализируем на снятие ликвидности
+            print(f"🔍 Анализ всех пар на {self.timeframe}...")
+            self.analyze_all_pairs()
 
-                    # Добавляем свечу в историю
-                    self.candles[pair].append(candle)
-
-                    # ВАЖНО: Храним только 2 последние свечи (скользящее окно)
-                    if len(self.candles[pair]) > 2:
-                        self.candles[pair] = self.candles[pair][-2:]  # оставляем только 2 последние
-
-                    print(f"{pair}: {open_price:.2f} → {close_price:.2f} ({candle['change']:+.2f})")
-
-            # Анализируем только если у ВСЕХ пар есть по 2 свечи
-            all_pairs_ready = all(len(candle_list) == 2 for candle_list in self.candles.values())
-
-            if all_pairs_ready:
-                print(f"🔍 Анализ всех пар на {self.timeframe}...")
-                self.analyze_all_pairs()
-            else:
-                print(f"Ожидаем накопления 2 свечей для всех пар...")
-
-            # Обновляем стартовые цены для следующей свечи
-            start_prices = current_prices.copy()
-            print("Стартовые цены обновлены\n" + "="*50)
+            # Ждем 1 секунду перед следующим обновлением
+            await asyncio.sleep(1)
 
 def main():
     # Пример использования
-    detector = OrderBlockDetector(
-        timeframe='5m',
+    detector = Detector(
+        timeframe='1s',
         bot_token='8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM',
         chat_id='1112634401'
     )
