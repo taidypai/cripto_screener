@@ -6,13 +6,13 @@ class Detector:
 
     def __init__(self, timeframe, bot_token, chat_id):
         self.trading_pairs = ['IMOEXF', 'GLDRUBF']
-        self.candles = {}  # Будет заполняться автоматически
+        self.candles = {}
         self.timeframe = timeframe
         self.time_service = TimeService()
         self.BOT_TOKEN = bot_token
         self.CHAT_ID = chat_id
 
-        # Инициализируем словарь для каждой пары
+        # Инициализируем свечи для каждой пары
         for pair in self.trading_pairs:
             self.candles[pair] = {
                 'open': None,
@@ -28,13 +28,13 @@ class Detector:
         try:
             response = requests.post(url, data=data)
             if response.status_code == 200:
-                print("Сообщение отправлено!")
+                print(f"[{self.timeframe}] Сообщение отправлено в Telegram!")
                 return True
             else:
-                print(f"Ошибка Telegram: {response.status_code} - {response.text}")
+                print(f"[{self.timeframe}] Ошибка Telegram: {response.status_code}")
                 return False
         except Exception as e:
-            print(f"Ошибка подключения к Telegram: {e}")
+            print(f"[{self.timeframe}] Ошибка подключения к Telegram: {e}")
             return False
 
     def get_price(self):
@@ -49,10 +49,10 @@ class Detector:
                 if price is not None:
                     current_prices[pair] = price
                 else:
-                    print(f"⚠️ Не удалось получить цену для {pair}")
+                    print(f"[{self.timeframe}] Не удалось получить цену для {pair}")
 
             except Exception as e:
-                print(f"❌ Ошибка получения цены для {pair}: {e}")
+                print(f" [{self.timeframe}] Ошибка получения цены для {pair}: {e}")
 
         return current_prices
 
@@ -88,83 +88,106 @@ class Detector:
         # Вычисляем тело свечи
         body_size = abs(candle['close'] - candle['open'])
 
-        # Вычисляем верхний и нижний тени (фитили)
+        # Вычисляем нижний фитиль
         if candle['close'] > candle['open']:  # Бычья свеча
-            upper_wick = candle['high'] - candle['close']
             lower_wick = candle['open'] - candle['low']
         else:  # Медвежья свеча
-            upper_wick = candle['high'] - candle['open']
             lower_wick = candle['close'] - candle['low']
 
-        # Проверяем условие снятия ликвидности: тело свечи < нижнего фитиля в 2 раза
-        if body_size > 0 and lower_wick > body_size * 2:
+        # Проверяем условие: нижний фитиль > тела свечи в 2 раза
+        # И нижний фитиль должен быть положительным (> 0)
+        if body_size > 0 and lower_wick > 0 and lower_wick > body_size * 2:
             return True
 
         return False
 
     def analyze_all_pairs(self):
         """Анализирует ВСЕ пары на снятие ликвидности"""
-        liquidity_removals = []  # список найденных снятий ликвидности
+        liquidity_removals = []
 
         for pair in self.trading_pairs:
             if self.check_liquidity_removal(pair):
                 candle = self.candles[pair]
 
                 # Определяем тип свечи
-                if candle['close'] > candle['open']:
-                    candle_type = 'БЫЧЬЯ'
-                else:
-                    candle_type = 'МЕДВЕЖЬЯ'
+                candle_type = 'БЫЧЬЯ' if candle['close'] > candle['open'] else 'МЕДВЕЖЬЯ'
 
-                # Вычисляем параметры для сообщения
+                # Вычисляем параметры
                 body_size = abs(candle['close'] - candle['open'])
                 lower_wick = candle['open'] - candle['low'] if candle['close'] > candle['open'] else candle['close'] - candle['low']
 
-                message_info = f"{pair}: {candle_type} | Тело: {body_size:.2f} | Нижняя тень: {lower_wick:.2f}"
+                message_info = f"{pair}: {candle_type} | Тело: {body_size:.4f} | Нижняя тень: {lower_wick:.4f}"
                 liquidity_removals.append(message_info)
-                print(f"✅ Найдено снятие ликвидности: {pair}")
+                print(f"[{self.timeframe}] Найдено снятие ликвидности: {pair}")
 
-        # Отправляем одним сообщением если нашли снятия ликвидности
+        # Отправляем сообщение если нашли снятия ликвидности
         if liquidity_removals:
-            message = f"Таймфрейм → {self.timeframe}\n"
+            message = f"Таймфрейм: {self.timeframe}\n"
             message += "Обнаружено снятие ликвидности:\n"
             message += "\n".join(liquidity_removals)
+            message += f"\n Условие: нижняя тень > тела свечи в 2 раза"
 
             self.send_telegram_message(message)
             return True
-        else:
-            print(f"❌ На {self.timeframe} снятие ликвидности не обнаружено")
-            return False
+
+        return False
+
+    def reset_candle(self, pair):
+        """Сбрасывает свечу для нового периода"""
+        self.candles[pair] = {
+            'open': None,
+            'high': None,
+            'low': None,
+            'close': None
+        }
 
     async def start_detection(self):
-        """Основной цикл для ВСЕХ пар"""
-        print(f"🚀 Запуск сервиса для таймфрейма {self.timeframe}")
+        """Основной цикл для всех пар на указанном таймфрейме"""
+        print(f"[{self.timeframe}] Запуск сервиса обнаружения снятия ликвидности")
 
         while True:
-            # Получаем текущие цены каждую секунду
-            current_prices = self.get_price()
+            try:
+                # Ждем начало новой свечи (момент закрытия предыдущей)
+                wait_time = await self.time_service.get_time_to_candle_close(self.timeframe)
+                if wait_time > 0:
+                    formatted_time = await self.time_service.format_time_remaining(wait_time)
+                    print(f"[{self.timeframe}] Ожидание начала новой свечи: {formatted_time}")
+                    await asyncio.sleep(wait_time)
 
-            # Обновляем свечи для каждой пары
-            for pair in self.trading_pairs:
-                if pair in current_prices:
-                    self.update_candle(pair, current_prices[pair])
-                    print(f"{pair}: O:{self.candles[pair]['open']:.2f} H:{self.candles[pair]['high']:.2f} L:{self.candles[pair]['low']:.2f} C:{self.candles[pair]['close']:.2f}")
+                # Получаем начальную цену (открытие новой свечи)
+                start_prices = self.get_price()
+                print(f"[{self.timeframe}] Новая свеча началась. Стартовые цены получены")
 
-            # Анализируем на снятие ликвидности
-            print(f"🔍 Анализ всех пар на {self.timeframe}...")
-            self.analyze_all_pairs()
+                # Инициализируем свечи
+                for pair in self.trading_pairs:
+                    if pair in start_prices:
+                        self.candles[pair]['open'] = start_prices[pair]
+                        self.candles[pair]['high'] = start_prices[pair]
+                        self.candles[pair]['low'] = start_prices[pair]
+                        self.candles[pair]['close'] = start_prices[pair]
 
-            # Ждем 1 секунду перед следующим обновлением
-            await asyncio.sleep(1)
+                # Основной цикл обновления в течение свечи
+                while True:
+                    # Получаем текущие цены
+                    current_prices = self.get_price()
 
-def main():
-    # Пример использования
-    detector = Detector(
-        timeframe='1s',
-        bot_token='8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM',
-        chat_id='1112634401'
-    )
-    asyncio.run(detector.start_detection())
+                    # Обновляем свечи для каждой пары
+                    for pair in self.trading_pairs:
+                        if pair in current_prices:
+                            self.update_candle(pair, current_prices[pair])
 
-if __name__ == "__main__":
-    main()
+                    # Анализируем на снятие ликвидности
+                    self.analyze_all_pairs()
+
+                    # Проверяем, не закончилась ли текущая свеча
+                    time_remaining = await self.time_service.get_time_to_candle_close(self.timeframe)
+                    if time_remaining <= 1:
+                        print(f"[{self.timeframe}] Свеча завершается. Подготовка к следующей...")
+                        break  # Выходим из внутреннего цикла для начала новой свечи
+                    else:
+                        # Ждем 1 секунду перед следующим обновлением
+                        await asyncio.sleep(1)
+
+            except Exception as e:
+                print(f"[{self.timeframe}] Ошибка в основном цикле: {e}")
+                await asyncio.sleep(5)  # Ждем перед повторной попыткой
