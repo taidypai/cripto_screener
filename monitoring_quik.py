@@ -1,4 +1,5 @@
 import os
+
 class Monitoring_QUIK:
     def __init__(self):
         self.file_path = 'C:/QUIK_DATA/price.txt'
@@ -42,7 +43,7 @@ class Monitoring_QUIK:
         except Exception as e:
             print(f"Ошибка чтения файла: {e}")
             return False
-            
+
 MQ = Monitoring_QUIK()
 def main():
     settings_search = Monitoring_QUIK()
