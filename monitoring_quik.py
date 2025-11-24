@@ -1,3 +1,4 @@
+# monitoring_quik.py
 import os
 
 class Monitoring_QUIK:
@@ -23,14 +24,12 @@ class Monitoring_QUIK:
         """Чтение цен из файла"""
         try:
             if not os.path.exists(self.file_path):
-                print(f"Файл {self.file_path} не существует")
                 return {}
 
             with open(self.file_path, 'r', encoding='utf-8') as file:
                 content = file.read().strip()
 
                 if not content:
-                    print("Файл пустой")
                     return {}
 
                 # Ожидаем формат: GLDRUBF:цена IMOEXF:цена
@@ -41,20 +40,50 @@ class Monitoring_QUIK:
                         symbol, price_str = part.split(':', 1)
                         try:
                             prices[symbol] = float(price_str)
-                        except ValueError as e:
-                            print(f"Ошибка преобразования цены для {symbol}: {price_str} - {e}")
+                        except ValueError:
                             continue
-
-                if not prices:
-                    print("Не удалось извлечь ни одной цены из файла")
 
                 return prices
 
-        except Exception as e:
-            print(f"Ошибка чтения файла: {e}")
+        except Exception:
             return {}
 
 MQ = Monitoring_QUIK()
+
+
+class Monitoring_LEVELS:
+    def __init__(self):
+        self.file_path = 'LEVELS.txt'
+
+    def read_prices(self):
+        """Чтение цен из файла"""
+        try:
+            if not os.path.exists(self.file_path):
+                return {}
+
+            with open(self.file_path, 'r', encoding='utf-8') as file:
+                content = file.read().strip()
+
+                if not content:
+                    return {}
+
+                # Ожидаем формат: GLDRUBF_1:цена IMOEXF_1:цена
+                prices = {}
+                parts = content.split()
+                for part in parts:
+                    if ':' in part:
+                        symbol, price_str = part.split(':', 1)
+                        try:
+                            prices[symbol] = float(price_str)
+                        except ValueError:
+                            continue
+
+                return prices
+
+        except Exception:
+            return {}
+
+ML = Monitoring_LEVELS()
 
 def main():
     settings_search = Monitoring_QUIK()
