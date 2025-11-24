@@ -58,7 +58,7 @@ class TradingBotLauncher:
 
             # Ждем пока откроется окно ввода пароля
             logger.info("Ожидаем окно ввода пароля...")
-            time.sleep(10)
+            time.sleep(5)
 
             import pyautogui
             # Вводим пароль
@@ -80,20 +80,26 @@ class TradingBotLauncher:
     async def start_detectors(self):
         """Запускает детекторы для всех таймфреймов"""
         from detector import Detector
+        from monitoring_quik import MQ
 
-        # Токен и chat_id для Telegram
-        BOT_TOKEN = "YOUR_BOT_TOKEN"
-        CHAT_ID = "YOUR_CHAT_ID"
+        BOT_TOKEN = "8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM"
+        CHAT_ID = "1112634401"
+
+        # Тестируем Telegram перед запуском
+        test_detector = Detector("test", BOT_TOKEN, CHAT_ID)
+        if test_detector.send_telegram_message("🤖 Бот запущен и готов к работе!"):
+            logger.info("✅ Тест Telegram прошел успешно")
+        else:
+            logger.error("❌ Ошибка Telegram! Проверьте токен и chat_id")
 
         timeframes = ["5m", "15m", "1h"]
 
         for timeframe in timeframes:
             detector = Detector(timeframe, BOT_TOKEN, CHAT_ID)
-            # Запускаем каждый детектор в отдельной задаче
             task = asyncio.create_task(detector.start_detection())
             self.detector_tasks.append(task)
-            logger.info(f"Запущен детектор для таймфрейма {timeframe}")
-            await asyncio.sleep(1)  # Небольшая пауза между запусками
+            logger.info(f"✅ Запущен детектор для таймфрейма {timeframe}")
+            await asyncio.sleep(1)
 
     def stop_quik(self):
         """Останавливает Quik"""
