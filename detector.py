@@ -125,7 +125,6 @@ class Detector:
             message = f"Таймфрейм: {self.timeframe}\n"
             message += "Обнаружено снятие ликвидности:\n"
             message += "\n".join(liquidity_removals)
-            message += f"\n Условие: нижняя тень > тела свечи в 2 раза"
 
             self.send_telegram_message(message)
             return True
