@@ -2,5 +2,4 @@ requests
 pytz
 aiohttp
 psutil
-subprocess
 pyautogui
