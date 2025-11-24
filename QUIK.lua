@@ -37,13 +37,13 @@ function main()
             end
 
             -- Логируем для отладки (раз в 10 секунд)
-            if math.fmod(os.time(), 10) == 0 then
+            if math.fmod(os.time(), 1) == 0 then
             end
         else
             message("No price data available", 2)
         end
 
-        sleep(2)
+        sleep(1)
     end
 end
 
