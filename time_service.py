@@ -1,3 +1,4 @@
+# time_service.py
 import asyncio
 from datetime import datetime, timedelta
 import aiohttp
@@ -9,21 +10,12 @@ class TimeService:
             '5m': 5, '15m': 15, '30m': 30,
             '1h': 60, '4h': 240, '1d': 1440
         }
-
-    def get_current_time(self):
-        if self.use_binance_time:
-            local_time = datetime.now().timestamp()
-            if local_time - self.last_sync_time > 3600:
-                asyncio.create_task(self.sync_binance_time())
-
-            binance_timestamp = local_time + self.binance_server_time_diff
-            return datetime.fromtimestamp(binance_timestamp, pytz.UTC)
-        else:
-            return datetime.now()
+        self.use_binance_time = False
+        self.last_sync_time = 0
+        self.binance_server_time_diff = 0
 
     async def get_time_to_candle_close(self, timeframe):
         """Время до закрытия свечи для таймфрейма"""
-
         now = datetime.now()
         tf_minutes = {'5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440}
 
@@ -47,7 +39,7 @@ class TimeService:
                 next_run += timedelta(days=1)
         return (next_run - now).total_seconds()
 
-    async def format_time_remaining(self, seconds):  # Добавь self первым параметром
+    async def format_time_remaining(self, seconds):
         seconds = int(seconds)
         if seconds >= 3600:
             hours = seconds // 3600
@@ -61,13 +53,12 @@ class TimeService:
         else:
             return f"{seconds:02d}с"
 
-async def main(time_frame):  # Сделай main асинхронной
-    time_service = TimeService()  # Создай экземпляр класса
+async def main(time_frame):
+    time_service = TimeService()
     my_time = await time_service.get_time_to_candle_close(time_frame)
     formatted_time = await time_service.format_time_remaining(my_time)
     print(f"Время до следующей свечи: {formatted_time}")
 
 if __name__ == "__main__":
     time_frame = str(input('Введите TimeFrame: '))
-    # Запускаем асинхронную функцию
     asyncio.run(main(time_frame))
