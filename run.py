@@ -1,4 +1,4 @@
-# main_launcher.py
+# run.py
 import subprocess
 import time
 import os
@@ -6,6 +6,7 @@ import datetime
 import psutil
 import sys
 import logging
+import asyncio
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,11 +28,8 @@ class TradingBotLauncher:
         self.password = "Vados77789878"
         self.account_number = "FZQU337161A"
 
-        # Настройки скриптов
-        self.detector_script = "detector.py"
-
         self.quik_process = None
-        self.detector_process = None
+        self.detector_tasks = []
         self.is_running = True
 
     def is_quik_running(self):
@@ -44,15 +42,8 @@ class TradingBotLauncher:
                 continue
         return False
 
-    def is_detector_running(self):
-        """Проверяет, запущен ли detector.py"""
-        if self.detector_process and self.detector_process.poll() is None:
-            return True
-        return False
-
     def start_quik(self):
         """Запускает Quik и вводит учетные данные"""
-
         if self.is_quik_running():
             logger.info("Quik уже запущен")
             return True
@@ -62,55 +53,47 @@ class TradingBotLauncher:
             return False
 
         try:
-            import pyautogui
             logger.info("Запускаем Quik...")
             self.quik_process = subprocess.Popen([self.quik_path], cwd=self.quik_dir)
 
             # Ждем пока откроется окно ввода пароля
             logger.info("Ожидаем окно ввода пароля...")
-            time.sleep(10)  # Увеличил время ожидания
+            time.sleep(10)
 
-            # Импортируем pyautogui для эмуляции ввода
             import pyautogui
-
             # Вводим пароль
             logger.info(f"Вводим пароль")
             pyautogui.write(self.password)
-            time.sleep(5)
-            pyautogui.press('enter')
-            pyautogui.press('tab')
+            time.sleep(1)
 
-            # Ждем появления следующего окна
-            logger.info("Ожидаем следующее окно...")
-            time.sleep(8)
-
-            # Вводим номер счета
-            logger.info(f"Вводим номер счета")
-            pyautogui.write(self.account_number)
-            time.sleep(2)
+            # Нажимаем Enter для входа
             pyautogui.press('enter')
 
-            logger.info("Quik запущен и учетные данные введены!")
+            logger.info("✅ Quik запущен и учетные данные введены!")
+            time.sleep(15)
             return True
 
         except Exception as e:
             logger.error(f"Ошибка при запуске Quik: {e}")
             return False
 
-    def start_detector(self):
-        """Запускает скрипт detector.py"""
-        try:
-            if os.path.exists(self.detector_script):
-                logger.info("Запускаем detector.py...")
-                self.detector_process = subprocess.Popen([sys.executable, self.detector_script])
-                logger.info("Detector.py запущен")
-                return True
-            else:
-                logger.error(f"Файл {self.detector_script} не найден")
-                return False
-        except Exception as e:
-            logger.error(f"Ошибка при запуске detector.py: {e}")
-            return False
+    async def start_detectors(self):
+        """Запускает детекторы для всех таймфреймов"""
+        from detector import Detector
+
+        # Токен и chat_id для Telegram
+        BOT_TOKEN = "YOUR_BOT_TOKEN"
+        CHAT_ID = "YOUR_CHAT_ID"
+
+        timeframes = ["5m", "15m", "1h"]
+
+        for timeframe in timeframes:
+            detector = Detector(timeframe, BOT_TOKEN, CHAT_ID)
+            # Запускаем каждый детектор в отдельной задаче
+            task = asyncio.create_task(detector.start_detection())
+            self.detector_tasks.append(task)
+            logger.info(f"Запущен детектор для таймфрейма {timeframe}")
+            await asyncio.sleep(1)  # Небольшая пауза между запусками
 
     def stop_quik(self):
         """Останавливает Quik"""
@@ -123,7 +106,6 @@ class TradingBotLauncher:
         except:
             pass
 
-        # Ищем процессы Quik
         for proc in psutil.process_iter(['pid', 'name']):
             try:
                 if 'info.exe' in proc.info['name'].lower() or 'quik' in proc.info['name'].lower():
@@ -135,22 +117,24 @@ class TradingBotLauncher:
 
         logger.info("Quik остановлен")
 
-    def stop_detector(self):
-        """Останавливает detector.py"""
-        logger.info("Останавливаем detector.py...")
+    async def stop_detectors(self):
+        """Останавливает все детекторы"""
+        logger.info("Останавливаем детекторы...")
 
-        try:
-            if self.detector_process and self.detector_process.poll() is None:
-                self.detector_process.terminate()
-                self.detector_process.wait(timeout=5)
-                logger.info("Detector.py остановлен")
-        except Exception as e:
-            logger.error(f"Ошибка при остановке detector.py: {e}")
+        for task in self.detector_tasks:
+            task.cancel()
 
-    def stop_all(self):
+        # Ждем завершения всех задач
+        if self.detector_tasks:
+            await asyncio.gather(*self.detector_tasks, return_exceptions=True)
+
+        self.detector_tasks = []
+        logger.info("Все детекторы остановлены")
+
+    async def stop_all(self):
         """Останавливает все процессы"""
         self.is_running = False
-        self.stop_detector()
+        await self.stop_detectors()
         self.stop_quik()
         logger.info("Все процессы остановлены")
 
@@ -164,46 +148,50 @@ class TradingBotLauncher:
                 break
 
             sleep_time = (target_time - now).total_seconds()
-            if sleep_time > 300:  # 5 минут
+            if sleep_time > 300:
                 logger.info(f"Ожидаем {target_hour:02d}:{target_minute:02d}... осталось {sleep_time/60:.1f} минут")
                 time.sleep(300)
-            elif sleep_time > 60:  # 1 минута
+            elif sleep_time > 60:
                 time.sleep(60)
             else:
                 time.sleep(1)
 
-    def monitor_processes(self):
+    async def monitor_processes(self):
         """Мониторит процессы и перезапускает при необходимости"""
         while self.is_running:
             try:
-                # Проверяем Quik каждые 30 секунд
+                # Проверяем Quik
                 if not self.is_quik_running() and self.is_running:
                     logger.warning("Quik не запущен, перезапускаем...")
                     self.start_quik()
-                    time.sleep(10)
 
-                # Проверяем detector.py каждые 30 секунд
-                if not self.is_detector_running() and self.is_running:
-                    logger.warning("Detector.py не запущен, перезапускаем...")
-                    self.start_detector()
+                # Проверяем детекторы
+                for i, task in enumerate(self.detector_tasks):
+                    if task.done() and self.is_running:
+                        logger.warning(f"Детектор упал, перезапускаем...")
+                        # Перезапускаем задачу
+                        from detector import Detector
+                        BOT_TOKEN = "8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM"
+                        CHAT_ID = "1112634401"
 
-                time.sleep(30)
+                        timeframe = ["5m", "15m", "1h"][i]
+                        detector = Detector(timeframe, BOT_TOKEN, CHAT_ID)
+                        new_task = asyncio.create_task(detector.start_detection())
+                        self.detector_tasks[i] = new_task
+
+                await asyncio.sleep(30)
 
             except Exception as e:
                 logger.error(f"Ошибка в мониторинге процессов: {e}")
-                time.sleep(60)
+                await asyncio.sleep(60)
 
-    def run_continuous(self):
-        """Основной цикл работы - запускается один раз и работает всегда"""
+    async def run_continuous(self):
+        """Основной цикл работы"""
         logger.info("=== АВТОМАТИЧЕСКИЙ ЗАПУСК ТОРГОВОГО БОТА ===")
         logger.info(f"Дата запуска: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-        logger.info("Режим: непрерывная работа")
 
-        import threading
-
-        # Запускаем мониторинг процессов в отдельном потоке
-        monitor_thread = threading.Thread(target=self.monitor_processes, daemon=True)
-        monitor_thread.start()
+        # Запускаем мониторинг процессов
+        monitor_task = asyncio.create_task(self.monitor_processes())
 
         while self.is_running:
             try:
@@ -220,62 +208,55 @@ class TradingBotLauncher:
                 if not self.is_quik_running():
                     self.start_quik()
 
-                # Ждем пока Quik полностью загрузится
-                time.sleep(8)
+                # Запускаем детекторы
+                await self.start_detectors()
 
-                # Запускаем detector.py
-                if not self.is_detector_running():
-                    self.start_detector()
+                logger.info("СИСТЕМА ЗАПУЩЕНА - РАБОТАЕМ ДО 23:59")
 
-                logger.info("СИСТЕМА ЗАПУЩЕНА - РАБОТАЕМ ДО 00:00")
-
-                # Работаем до 00:00
-                now = datetime.datetime.now()
-                end_time = now.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+                # Работаем до 23:59
+                end_time = datetime.datetime.now().replace(hour=23, minute=59, second=0, microsecond=0)
 
                 while datetime.datetime.now() < end_time and self.is_running:
-                    # Каждые 30 минут пишем статус
+                    status_quik = "🟢" if self.is_quik_running() else "🔴"
+                    running_detectors = sum(1 for task in self.detector_tasks if not task.done())
+                    remaining = (end_time - datetime.datetime.now()).total_seconds() / 60
+
                     if datetime.datetime.now().minute % 30 == 0:
-                        status_quik = "" if self.is_quik_running() else "🔴"
-                        status_detector = "" if self.is_detector_running() else "🔴"
-                        remaining = (end_time - datetime.datetime.now()).total_seconds() / 3600
-                        logger.info(f"Статус: Quik {status_quik} | Detector {status_detector} | До 00:00: {remaining:.1f}ч")
+                        logger.info(f"Статус: Quik {status_quik} | Detectors {running_detectors}/3 | До 23:59: {remaining:.1f} мин")
 
-                    time.sleep(60)  # Проверяем каждую минуту
+                    await asyncio.sleep(60)
 
-                # Если дошли до 00:00 - останавливаем на ночь
+                # Останавливаем на ночь
                 if self.is_running:
                     logger.info("КОНЕЦ РАБОЧЕГО ДНЯ - ОСТАНАВЛИВАЕМ СИСТЕМУ...")
-                    self.stop_detector()
+                    await self.stop_detectors()
                     self.stop_quik()
-
                     logger.info("ОТДЫХ ДО ЗАВТРА...")
-                    time.sleep(10)  # Короткая пауза перед следующим циклом
+                    await asyncio.sleep(60)
 
             except KeyboardInterrupt:
-                logger.info("⏹Остановлено пользователем")
-                self.stop_all()
+                logger.info("⏹ Остановлено пользователем")
+                await self.stop_all()
                 break
             except Exception as e:
                 logger.error(f"Критическая ошибка: {e}")
                 logger.info("Перезапуск через 60 секунд...")
-                time.sleep(60)
+                await asyncio.sleep(60)
 
-def main():
-    """Главная функция - запускает все и работает вечно"""
+async def main():
+    """Главная функция"""
     launcher = TradingBotLauncher()
 
-    # Обработка Ctrl+C для graceful shutdown
     try:
-        launcher.run_continuous()
+        await launcher.run_continuous()
     except KeyboardInterrupt:
         logger.info("Получен сигнал остановки...")
-        launcher.stop_all()
+        await launcher.stop_all()
     except Exception as e:
         logger.error(f"Фатальная ошибка: {e}")
         logger.info("Перезапуск через 30 секунд...")
-        time.sleep(30)
-        main()  # Рекурсивный перезапуск
+        await asyncio.sleep(30)
+        await main()
 
 if __name__ == "__main__":
     print("=== 🚀 AUTOMATIC TRADING BOT ===")
@@ -284,4 +265,4 @@ if __name__ == "__main__":
     print("Логи пишутся в trading_bot.log")
     print("-" * 50)
 
-    main()
+    asyncio.run(main())
