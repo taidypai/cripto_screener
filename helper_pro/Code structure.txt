@@ -1,0 +1,12 @@
+your_bot/
+├── services/
+│   ├── __init__.py
+│   └── level_service.py
+├── handlers/
+│   ├── __init__.py
+│   └── message_router.py
+├── keyboards.py
+├── start_router.py
+├── callback_routers.py
+├── config.py
+└── run_bot.py
