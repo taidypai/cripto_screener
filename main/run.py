@@ -7,6 +7,8 @@ import psutil
 import sys
 import logging
 import asyncio
+import pyautogui
+import pygetwindow as gw
 
 # Настройка логирования
 logging.basicConfig(
@@ -20,6 +22,126 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+class QuikLoginHandler:
+    def __init__(self, password):
+        self.password = password
+        self.logger = logger
+    
+    def is_login_visible(self):
+        """Комбинированная проверка наличия окна логина"""
+        # Проверка через pygetwindow
+        if self._find_by_title():
+            return True
+        
+        # Проверка через поиск элементов интерфейса
+        if self._find_by_interface():
+            return True
+            
+        return False
+    
+    def _find_by_title(self):
+        """Поиск окна по заголовку"""
+        try:
+            # Поиск по различным возможным заголовкам
+            possible_titles = ['Quik', 'QUIK', 'Квик', 'Вход', 'Пароль', 'Login', 'QUIK 2 Windows']
+            
+            for title in possible_titles:
+                windows = gw.getWindowsWithTitle(title)
+                if windows:
+                    self.logger.info(f"Найдено окно: {windows[0].title}")
+                    return True
+                    
+            # Поиск среди всех окон
+            all_windows = gw.getAllTitles()
+            quik_windows = [title for title in all_windows if any(word in title for word in ['Quik', 'QUIK', 'Квик', 'QUIK 2 Windows'])]
+            
+            if quik_windows:
+                self.logger.info(f"Найдены окна Quik: {quik_windows}")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Ошибка при поиске окна по заголовку: {e}")
+        
+        return False
+    
+    def _find_by_interface(self):
+        """Поиск по элементам интерфейса"""
+        try:
+            # Ищем характерные элементы - поле ввода или кнопку
+            screen_width, screen_height = pyautogui.size()
+            
+            # Проверяем несколько областей экрана
+            check_points = [
+                (screen_width // 2, screen_height // 2),  # центр
+                (screen_width // 2, screen_height // 3),  # верхняя треть
+                (screen_width // 2, screen_height * 2 // 3)  # нижняя треть
+            ]
+            
+            for x, y in check_points:
+                # Кликаем и проверяем реакцию
+                pyautogui.click(x, y)
+                time.sleep(0.5)
+                
+                # Пытаемся ввести текст - если поле ввода активно, это сработает
+                pyautogui.write('test')
+                time.sleep(0.5)
+                
+                # Если что-то ввелось, значит есть активное поле ввода
+                pyautogui.press('backspace', presses=4)  # очищаем
+                
+                # Если мы смогли ввести текст, вероятно есть поле ввода
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Ошибка при поиске по интерфейсу: {e}")
+        
+        return False
+    
+    def wait_and_enter_password(self, max_wait=30):
+        """
+        Ожидает окно ввода пароля и вводит данные
+        """
+        self.logger.info("Ожидаем окно ввода пароля...")
+        
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            if self.is_login_visible():
+                self.logger.info("Окно найдено, вводим пароль...")
+                
+                # Даем окну время для полного открытия
+                time.sleep(2)
+                
+                # Активируем окно
+                try:
+                    windows = gw.getWindowsWithTitle('QUIK')
+                    if windows:
+                        windows[0].activate()
+                        time.sleep(1)
+                except:
+                    pass
+                
+                # Кликаем в центр для активации поля ввода
+                screen_width, screen_height = pyautogui.size()
+                pyautogui.click(screen_width // 2, screen_height // 2)
+                time.sleep(0.5)
+                
+                # Вводим пароль
+                pyautogui.write(self.password)
+                time.sleep(1)
+                
+                # Нажимаем Enter
+                pyautogui.press('enter')
+                self.logger.info("✅ Пароль введен и отправлен")
+                
+                # Ждем немного для завершения входа
+                time.sleep(5)
+                return True
+            
+            time.sleep(2)
+        
+        self.logger.error("❌ Не удалось найти окно ввода пароля")
+        return False
+
 class TradingBotLauncher:
     def __init__(self):
         # Настройки Quik
@@ -31,6 +153,7 @@ class TradingBotLauncher:
         self.quik_process = None
         self.detector_tasks = []
         self.is_running = True
+        self.login_handler = QuikLoginHandler(self.password)
 
     def is_quik_running(self):
         """Проверяет, запущен ли Quik"""
@@ -56,22 +179,17 @@ class TradingBotLauncher:
             logger.info("Запускаем Quik...")
             self.quik_process = subprocess.Popen([self.quik_path], cwd=self.quik_dir)
 
-            # Ждем пока откроется окно ввода пароля
+            # Ждем пока откроется окно ввода пароля и вводим данные
             logger.info("Ожидаем окно ввода пароля...")
-            time.sleep(8)
-
-            import pyautogui
-            # Вводим пароль
-            logger.info(f"Вводим пароль")
-            pyautogui.write(self.password)
-            time.sleep(1)
-
-            # Нажимаем Enter для входа
-            pyautogui.press('enter')
-
-            logger.info("✅ Quik запущен и учетные данные введены!")
-            time.sleep(15)
-            return True
+            
+            # Используем наш обработчик для ввода пароля
+            if self.login_handler.wait_and_enter_password():
+                logger.info("✅ Quik запущен и учетные данные введены!")
+                time.sleep(15)
+                return True
+            else:
+                logger.error("❌ Не удалось ввести учетные данные в Quik")
+                return False
 
         except Exception as e:
             logger.error(f"Ошибка при запуске Quik: {e}")
