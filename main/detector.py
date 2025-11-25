@@ -123,7 +123,7 @@ class Detector:
                     current_prices[pair] = price
 
             except Exception as e:
-                print(f"[{self.timeframe}] ❌ Ошибка получения цены для {pair}: {e}")
+                print(f"[{self.timeframe}] Ошибка получения цены для {pair}: {e}")
 
         return current_prices
 
@@ -192,7 +192,7 @@ class Detector:
                     candle['low'],
                     candle['high']
                 )
-                message_info = f"{pair}:"
+                message_info = f"{pair}"
                 # Если есть касание уровней - добавляем в приоритетный список
                 if touched_levels:
                     priority_liquidity_removals.append(message_info)
@@ -204,17 +204,16 @@ class Detector:
 
         # Сначала отправляем ПРИОРИТЕТНЫЕ снятия (с касанием уровней)
         if priority_liquidity_removals:
-            message = f"СНЯТИЕ ЛИКВИДНОСТИ ({self.timeframe})\n"
-            message += "\n".join(priority_liquidity_removals)
-            message += f"\n\n✅ Подтверждено касанием пользовательских уровней"
+            message = f"{self.timeframe}: ".join(priority_liquidity_removals)
+            message += f"\n✅"
 
             self.send_telegram_message(message)
 
         # Затем отправляем ОБЫЧНЫЕ снятия (без касания уровней)
         if all_liquidity_removals:
-            message = f"СНЯТИЕ ЛИКВИДНОСТИ ({self.timeframe})\n"
+            message = f"{self.timeframe} "
             message += "\n".join(all_liquidity_removals)
-            message += f"\n\n⚠️ Без касания пользовательских уровней"
+            message += f"\n⚠️"
 
             self.send_telegram_message(message)
 
