@@ -1,5 +1,0 @@
-requests
-pytz
-aiohttp
-psutil
-pyautogui
