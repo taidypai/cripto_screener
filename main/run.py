@@ -87,7 +87,7 @@ class TradingBotLauncher:
 
         # Тестируем Telegram перед запуском
         test_detector = Detector("test", BOT_TOKEN, CHAT_ID)
-        if test_detector.send_telegram_message("🤖 Бот запущен и готов к работе!"):
+        if test_detector.send_telegram_message("Бот запущен и готов к работе!"):
             logger.info("✅ Тест Telegram прошел успешно")
         else:
             logger.error("❌ Ошибка Telegram! Проверьте токен и chat_id")
@@ -150,30 +150,41 @@ class TradingBotLauncher:
             now = datetime.datetime.now()
             target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
 
+            # Если целевое время уже прошло сегодня, планируем на завтра
             if now >= target_time:
-                break
+                target_time += datetime.timedelta(days=1)
 
             sleep_time = (target_time - now).total_seconds()
+
             if sleep_time > 300:
                 logger.info(f"Ожидаем {target_hour:02d}:{target_minute:02d}... осталось {sleep_time/60:.1f} минут")
-                time.sleep(300)
+                time.sleep(min(300, sleep_time))
             elif sleep_time > 60:
-                time.sleep(60)
+                time.sleep(min(60, sleep_time))
             else:
                 time.sleep(1)
+
+            # Проверяем, не настало ли время выхода
+            if sleep_time <= 1:
+                break
+
+    def should_stop_for_night(self):
+        """Проверяет, нужно ли остановиться на ночь (после 00:00)"""
+        now = datetime.datetime.now()
+        return now.hour >= 0 and now.hour < 9
 
     async def monitor_processes(self):
         """Мониторит процессы и перезапускает при необходимости"""
         while self.is_running:
             try:
                 # Проверяем Quik
-                if not self.is_quik_running() and self.is_running:
+                if not self.is_quik_running() and self.is_running and not self.should_stop_for_night():
                     logger.warning("Quik не запущен, перезапускаем...")
                     self.start_quik()
 
                 # Проверяем детекторы
                 for i, task in enumerate(self.detector_tasks):
-                    if task.done() and self.is_running:
+                    if task.done() and self.is_running and not self.should_stop_for_night():
                         logger.warning(f"Детектор упал, перезапускаем...")
                         # Перезапускаем задачу
                         from detector import Detector
@@ -217,18 +228,25 @@ class TradingBotLauncher:
                 # Запускаем детекторы
                 await self.start_detectors()
 
-                logger.info("СИСТЕМА ЗАПУЩЕНА - РАБОТАЕМ ДО 23:59")
+                logger.info("СИСТЕМА ЗАПУЩЕНА - РАБОТАЕМ ДО 00:00")
 
-                # Работаем до 23:59
-                end_time = datetime.datetime.now().replace(hour=23, minute=59, second=0, microsecond=0)
+                # Работаем до 00:00 следующего дня
+                end_time = datetime.datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
+                if datetime.datetime.now() > end_time:
+                    end_time += datetime.timedelta(days=1)
 
                 while datetime.datetime.now() < end_time and self.is_running:
+                    # Если уже после полуночи, останавливаемся
+                    if self.should_stop_for_night():
+                        logger.info("Обнаружено время после полуночи - останавливаем систему")
+                        break
+
                     status_quik = "🟢" if self.is_quik_running() else "🔴"
                     running_detectors = sum(1 for task in self.detector_tasks if not task.done())
                     remaining = (end_time - datetime.datetime.now()).total_seconds() / 60
 
                     if datetime.datetime.now().minute % 30 == 0:
-                        logger.info(f"Статус: Quik {status_quik} | Detectors {running_detectors}/3 | До 23:59: {remaining:.1f} мин")
+                        logger.info(f"Статус: Quik {status_quik} | Detectors {running_detectors}/3 | До 00:00: {remaining:.1f} мин")
 
                     await asyncio.sleep(60)
 
@@ -238,7 +256,9 @@ class TradingBotLauncher:
                     await self.stop_detectors()
                     self.stop_quik()
                     logger.info("ОТДЫХ ДО ЗАВТРА...")
-                    await asyncio.sleep(60)
+
+                    # Короткая пауза перед следующей проверкой
+                    await asyncio.sleep(10)
 
             except KeyboardInterrupt:
                 logger.info("⏹ Остановлено пользователем")
@@ -248,6 +268,9 @@ class TradingBotLauncher:
                 logger.error(f"Критическая ошибка: {e}")
                 logger.info("Перезапуск через 60 секунд...")
                 await asyncio.sleep(60)
+
+        # Останавливаем мониторинг при выходе
+        monitor_task.cancel()
 
 async def main():
     """Главная функция"""
@@ -267,6 +290,7 @@ async def main():
 if __name__ == "__main__":
     print("=== 🚀 AUTOMATIC TRADING BOT ===")
     print("Запуск системы...")
+    print("Режим работы: 9:00 - 00:00")
     print("Для остановки нажмите Ctrl+C")
     print("Логи пишутся в trading_bot.log")
     print("-" * 50)
