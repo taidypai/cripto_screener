@@ -11,8 +11,6 @@ function main()
         {class = "SPBFUT", ticker = "IMOEXF", code = "IMOEXF"}
     }
 
-    message("Start writing prices", 1)
-
     while is_run do
         local price_strings = {}
 
