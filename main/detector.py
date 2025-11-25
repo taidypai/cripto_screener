@@ -205,7 +205,7 @@ class Detector:
         # Сначала отправляем ПРИОРИТЕТНЫЕ снятия (с касанием уровней)
         if priority_liquidity_removals:
             message = f"{self.timeframe}: ".join(priority_liquidity_removals)
-            message += f"\n✅"
+            message += f" ✅"
 
             self.send_telegram_message(message)
 
@@ -213,7 +213,7 @@ class Detector:
         if all_liquidity_removals:
             message = f"{self.timeframe} "
             message += "\n".join(all_liquidity_removals)
-            message += f"\n⚠️"
+            message += f" ⚠️"
 
             self.send_telegram_message(message)
 
@@ -286,5 +286,5 @@ class Detector:
                         await asyncio.sleep(1)
 
             except Exception as e:
-                print(f"[{self.timeframe}] ❌ Ошибка в основном цикле: {e}")
+                print(f"[{self.timeframe}] Ошибка в основном цикле: {e}")
                 await asyncio.sleep(5)
