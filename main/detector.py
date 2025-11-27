@@ -213,7 +213,6 @@ class Detector:
         if all_liquidity_removals:
             message = f"{self.timeframe} "
             message += "\n".join(all_liquidity_removals)
-            message += f" ⚠️"
 
             self.send_telegram_message(message)
 
@@ -288,3 +287,4 @@ class Detector:
             except Exception as e:
                 print(f"[{self.timeframe}] Ошибка в основном цикле: {e}")
                 await asyncio.sleep(5)
+
