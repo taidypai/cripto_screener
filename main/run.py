@@ -92,7 +92,7 @@ class TradingBotLauncher:
         else:
             logger.error("❌ Ошибка Telegram! Проверьте токен и chat_id")
 
-        timeframes = ["5m", "15m", "1h","4h"]
+        timeframes = ["5m", "15m", "1h", "4h"]
 
         for timeframe in timeframes:
             detector = Detector(timeframe, BOT_TOKEN, CHAT_ID)
@@ -296,5 +296,6 @@ if __name__ == "__main__":
     print("-" * 50)
 
     asyncio.run(main())
+
 
 
