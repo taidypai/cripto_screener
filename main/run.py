@@ -191,7 +191,7 @@ class TradingBotLauncher:
                         BOT_TOKEN = "8442684870:AAEwtD81q4QbQSL5D7fnGUYY7wiOkODAHGM"
                         CHAT_ID = "1112634401"
 
-                        timeframe = ["15m", "1h", "4h"][i]
+                        timeframe = ["5m", "15m", "1h", "4h"]
                         detector = Detector(timeframe, BOT_TOKEN, CHAT_ID)
                         new_task = asyncio.create_task(detector.start_detection())
                         self.detector_tasks[i] = new_task
@@ -296,6 +296,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     asyncio.run(main())
+
 
 
 
