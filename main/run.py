@@ -213,8 +213,8 @@ class TradingBotLauncher:
         while self.is_running:
             try:
                 # Ожидаем до 9:00 утра
-                logger.info("ОЖИДАЕМ 9:00 УТРА ДЛЯ ЗАПУСКА...")
-                self.wait_until_time(9, 0)
+                logger.info("ОЖИДАЕМ 8:00 УТРА ДЛЯ ЗАПУСКА...")
+                self.wait_until_time(8, 0)
 
                 if not self.is_running:
                     break
@@ -290,12 +290,13 @@ async def main():
 if __name__ == "__main__":
     print("=== 🚀 AUTOMATIC TRADING BOT ===")
     print("Запуск системы...")
-    print("Режим работы: 9:00 - 00:00")
+    print("Режим работы: 8:00 - 00:00")
     print("Для остановки нажмите Ctrl+C")
     print("Логи пишутся в trading_bot.log")
     print("-" * 50)
 
     asyncio.run(main())
+
 
 
 
